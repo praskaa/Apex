@@ -315,6 +315,11 @@ private static void Log(string message)
   panel per tool dibuat dari `OnStartup` yang sama.
 - `CreateRibbonTab` melempar `ArgumentException` bila tab sudah ada → tetap
   bungkus `try/catch` sebagai pertahanan (tab bisa sudah dibuat add-in lain).
+- `CreateRibbonPanel` **juga** melempar `ArgumentException` bila nama panel
+  sudah dipakai di tab yang sama — terjadi nyata: legacy UltimateJoinElements
+  gagal load (dialog error saat startup Revit) ketika Apex sudah membuat
+  panel "Ultimate Join". Satu nama panel = satu pemilik; kalau dua add-in
+  bisa bentrok, bungkus `CreateRibbonPanel` dengan try/catch juga.
 - Beri `ToolTip`/`LongDescription`; tambahkan `Image`/`LargeImage` PNG 16/32 px
   bila perlu ikon.
 
@@ -415,9 +420,10 @@ Alasan:
 
 Status: repo Apex ada di `Documents\RevitAddin\Apex\` (git). Migrasi
 Ultimate Join → `Tools/UltimateJoin/` **selesai** (§12.3 langkah 1–5).
-Sisa: uji Apex di Revit, lalu hapus deploy legacy `UltimateJoinElements*`
-di folder Addins (§12.3 langkah 6). Project legacy
-`..\UltimateJoinElements\` tetap buildable sampai itu dilakukan (§2.2).
+Deploy legacy `UltimateJoinElements*` sudah ditarik dari folder Addins
+(§12.3 langkah 6) — dipindah ke `..\UltimateJoinElements\deploy-retired\`,
+bukan dihapus. Project legacy tetap buildable (§2.2) tapi **jangan
+di-deploy lagi**.
 
 ### 12.2 Checklist menambah tool baru
 
@@ -433,7 +439,7 @@ di folder Addins (§12.3 langkah 6). Project legacy
    dengan nama tool, mis. `[UltimateJoin] ...`.
 6. `.addin`, GUID, dan deploy tidak berubah — rebuild + restart Revit.
 
-### 12.3 Migrasi UltimateJoinElements → Apex (langkah 1–5 selesai)
+### 12.3 Migrasi UltimateJoinElements → Apex (selesai)
 
 1. Scaffold repo `Apex\` (layout §2.1). `Apex.addin` memakai **AddInId
    GUID baru** (GUID lama milik UltimateJoinElements — jangan dipakai ulang).
@@ -446,7 +452,8 @@ di folder Addins (§12.3 langkah 6). Project legacy
    `%AppData%\Apex\UltimateJoin\config.json` (copy manual; skema sama).
 5. Bawa target `AuthenticodeSign` + `DeployAddin` dari csproj lama
    (§3), sesuaikan nama ke `Apex`.
-6. Setelah Apex terbukti jalan di Revit: hapus deploy legacy —
-   `%AppData%\Autodesk\Revit\Addins\2026\UltimateJoinElements.addin` dan
-   folder `...\Addins\2026\UltimateJoinElements\` — agar tidak ada panel
-   ganda di tab "Apex".
+6. ✅ SELESAI (2026-09-12): Apex terbukti jalan (dia yang bikin panel
+   "Ultimate Join" lebih dulu); legacy lalu gagal load dengan
+   `CreateRibbonPanel` duplicate → `ArgumentException`. Deploy legacy
+   ditarik dari folder Addins ke `..\UltimateJoinElements\deploy-retired\`.
+   **Jangan deploy ulang legacy.**
