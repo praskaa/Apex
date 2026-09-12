@@ -1,10 +1,15 @@
 <Project>
   <PropertyGroup>
     <!--
-      Default install path for Revit 2026's API assemblies. Change this
-      if your Revit is installed somewhere else, or override per-build:
+      Default install paths for each Revit version's API assemblies.
+      net48 (Revit 2024 target) uses RevitAPIPath2024, net8.0-windows
+      (Revit 2025/2026 target) uses RevitAPIPath. Change these if your
+      Revit is installed somewhere else, or override per-build:
+        dotnet build -p:RevitAPIPath2024="C:\Some\Other\Path"
         dotnet build -p:RevitAPIPath="C:\Some\Other\Path"
     -->
+    <RevitAPIPath2024 Condition="'$(RevitAPIPath2024)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitAPIPath2024>
+    <RevitAPIPath2025 Condition="'$(RevitAPIPath2025)' == ''">C:\Program Files\Autodesk\Revit 2025</RevitAPIPath2025>
     <RevitAPIPath Condition="'$(RevitAPIPath)' == ''">C:\Program Files\Autodesk\Revit 2026</RevitAPIPath>
   </PropertyGroup>
 </Project>

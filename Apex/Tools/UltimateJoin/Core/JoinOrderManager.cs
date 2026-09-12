@@ -34,7 +34,7 @@ public static class JoinOrderManager
         try
         {
             if (element?.Category == null) return null;
-            if ((BuiltInCategory)element.Category.Id.Value != BuiltInCategory.OST_Floors) return null;
+            if ((BuiltInCategory)RevitCompat.GetElementIdValue(element.Category.Id) != BuiltInCategory.OST_Floors) return null;
 
             if (doc.GetElement(element.GetTypeId()) is FloorType floorType)
             {

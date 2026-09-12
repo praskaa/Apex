@@ -4,12 +4,14 @@
     Apex — hub add-in PrasKaa (satu DLL, satu manifest, tab "Apex",
     satu panel per tool). Tool hidup di Tools/<NamaTool>/.
 
-    Revit 2026 runs on .NET 8. Revit 2024/2025 use .NET Framework 4.8 —
-    if you later multi-target, this TargetFramework line is the one to
-    change/duplicate (see AGENTS.md §9).
+    Multi-version (AGENTS.md §9): satu codebase, dua TFM.
+      net48           → API Revit 2024  → deploy Addins\2024
+      net8.0-windows  → API Revit 2026  → deploy Addins\2025 + Addins\2026
+    (Satu folder Addins\2026 melayani 2026.0 dan 2026.5; DLL net8 tetap
+    termuat di host .NET 10 milik 2026.5.)
   -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -18,16 +20,34 @@
     <AssemblyName>Apex</AssemblyName>
     <RootNamespace>Apex</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Wajib: net48 vs net8.0-windows ke bin\Release\<tfm> terpisah,
+         supaya dua inner-build tidak saling menimpa output. -->
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <!-- Revit hosts the process; add-ins must not copy Revit's own DLLs -->
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
+  <!-- Build net48 via dotnet CLI tanpa targeting pack terpisah. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
   <!--
-    RevitAPIPath is defined in Directory.Build.props. Override per-machine
-    with: dotnet build -p:RevitAPIPath="D:\Some\Other\Path"
+    Referensi API per-TFM (Private=false). net48 WAJIB pakai API Revit
+    2024 — assembly net8 (API 2026) tidak akan termuat di proses
+    .NET Framework.
   -->
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitAPIPath2024)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitAPIPath2024)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <Reference Include="RevitAPI">
       <HintPath>$(RevitAPIPath)\RevitAPI.dll</HintPath>
       <Private>false</Private>
@@ -37,6 +57,14 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <!-- Mapping TFM → folder Addins yang di-deploy (bisa >1, pisah ;). -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
+    <DeployRevitVersions>2024</DeployRevitVersions>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <DeployRevitVersions>2025;2026</DeployRevitVersions>
+  </PropertyGroup>
 
   <ItemGroup>
     <!-- Ribbon icons, embedded into the assembly (pack URI: component/Icons/...) -->
@@ -54,28 +82,32 @@
     asks once per new build hash — click "Always Load"; trusting the
     cert in Cert:\CurrentUser\Root removes the prompt entirely.
     Runs after Build and before DeployAddin so the deployed DLL is the
-    signed one.
+    signed one. Batching: jalan untuk output tiap TFM (net48 + net8).
   -->
-  <Target Name="AuthenticodeSign" BeforeTargets="DeployAddin">
+  <Target Name="AuthenticodeSign" BeforeTargets="DeployAddin" Condition="'$(TargetFramework)' != ''">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$c = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -eq 'CN=PrasKaa' -and $_.HasPrivateKey } | Select-Object -First 1; if (-not $c) { $c = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=PrasKaa' -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(20) }; Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate $c | Out-Null&quot;" />
   </Target>
 
   <!--
     After every build, drop the .addin manifest + dll into Revit's
-    per-user Addins folder so "build → open Revit → test" works without
-    a manual copy step. Revit 2026 does not resolve a bare-filename
+    per-user Addins folders so "build → open Revit → test" works without
+    a manual copy step. Runs per inner-TFM build (Condition skips the
+    outer cross-targeting build, where TargetPath is empty);
+    DeployRevitVersions (di atas) menentukan folder tujuan versi Revit.
+    Revit 2026 does not resolve a bare-filename
     <Assembly>, hence the dedicated subfolder (see AGENTS.md §4).
   -->
-  <Target Name="DeployAddin" AfterTargets="Build">
+  <Target Name="DeployAddin" AfterTargets="Build" Condition="'$(TargetFramework)' != ''">
     <ItemGroup>
       <AddinFiles Include="$(ProjectDir)Apex.addin" />
       <BuiltDlls Include="$(TargetDir)Apex.dll" />
+      <DeployFolders Include="$(DeployRevitVersions)" />
     </ItemGroup>
-    <MakeDir Directories="$(AppData)\Autodesk\Revit\Addins\2026" />
-    <MakeDir Directories="$(AppData)\Autodesk\Revit\Addins\2026\Apex" />
-    <Copy SourceFiles="@(AddinFiles)" DestinationFolder="$(AppData)\Autodesk\Revit\Addins\2026" />
-    <Copy SourceFiles="@(BuiltDlls)" DestinationFolder="$(AppData)\Autodesk\Revit\Addins\2026\Apex" />
-    <Delete Files="$(AppData)\Autodesk\Revit\Addins\2026\Apex.dll" ContinueOnError="true" />
+    <MakeDir Directories="$(AppData)\Autodesk\Revit\Addins\%(DeployFolders.Identity)" />
+    <MakeDir Directories="$(AppData)\Autodesk\Revit\Addins\%(DeployFolders.Identity)\Apex" />
+    <Copy SourceFiles="@(AddinFiles)" DestinationFolder="$(AppData)\Autodesk\Revit\Addins\%(DeployFolders.Identity)" />
+    <Copy SourceFiles="@(BuiltDlls)" DestinationFolder="$(AppData)\Autodesk\Revit\Addins\%(DeployFolders.Identity)\Apex" />
+    <Delete Files="$(AppData)\Autodesk\Revit\Addins\%(DeployFolders.Identity)\Apex.dll" ContinueOnError="true" />
   </Target>
 
 </Project>
