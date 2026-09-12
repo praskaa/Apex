@@ -4,10 +4,12 @@ AGENTS.md resmi **repo Apex** — single source of truth pengembangan
 tool C# Revit PrasKaa. File ini ikut ter-versioning di git, jadi bisa
 di-update dari mesin mana pun.
 
-Status saat ini: **Revit 2026 / .NET 8**. Jalur migrasi dari toolkit
-pyRevit `PyPrasKaa` ke add-in native compiled. Semua tool C# hidup di
-**satu add-in hub `Apex`** (satu repo, satu DLL, satu manifest) — tab
-ribbon **"Apex"** adalah toolbar utamanya, satu panel per tool.
+Status saat ini: **Revit 2024 / 2025 / 2026 (termasuk 2026.5) —
+multi-version**. Satu codebase, `dotnet build -c Release` sekali → DLL +
+manifest ter-deploy ke `Addins\2024`, `Addins\2025`, dan `Addins\2026`
+sekaligus (matrix runtime & aturan: §9). Semua tool C# hidup di
+**satu add-in hub `Apex`** (satu repo, satu codebase, satu manifest) —
+tab ribbon **"Apex"** adalah toolbar utamanya, satu panel per tool.
 `UltimateJoinElements` adalah add-in pertama yang terbukti jalan;
 semua pelajaran di bawah berasal dari sana, dan ia sudah dimigrasi
 masuk sebagai tool pertama Apex (lihat §12).
@@ -16,8 +18,10 @@ masuk sebagai tool pertama Apex (lihat §12).
 
 ## 0. Aturan wajib (TL;DR)
 
-1. Target framework: `net8.0-windows`, `UseWPF=true`, `PlatformTarget=x64`.
-2. Referensi `RevitAPI.dll` + `RevitAPIUI.dll` dari instalasi Revit,
+1. Target frameworks: `net48;net8.0-windows` (multi-version, §9),
+   `UseWPF=true`, `PlatformTarget=x64`.
+2. Referensi `RevitAPI.dll` + `RevitAPIUI.dll` dari instalasi Revit
+   **per-TFM** — net48 → API Revit 2024, net8.0-windows → API Revit 2026 —
    dengan `Private=false`, dan `CopyLocalLockFileAssemblies=false`.
 3. **`<Assembly>` di manifest `.addin` harus path absolut ATAU relatif
    ber-subfolder** (`NamaAddin\NamaAddin.dll`). **JANGAN pakai nama file
@@ -46,9 +50,16 @@ masuk sebagai tool pertama Apex (lihat §12).
   build `net8.0` (error `NETSDK1045`). Install: `winget install Microsoft.DotNet.SDK.8`.
   (PC ini juga punya runtime .NET 8 & WindowsDesktop 8.0.x yang dibutuhkan
   Revit 2026 untuk menjalankan add-in.)
-- **Revit 2026** di `C:\Program Files\Autodesk\Revit 2026` (diatur di
-  `Directory.Build.props`; override per-build dengan
-  `dotnet build -p:RevitAPIPath="D:\Path\Lain"`).
+- **Revit 2024, 2025, dan 2026** di `C:\Program Files\Autodesk\Revit <tahun>`
+  (diatur di `Directory.Build.props`: `RevitAPIPath2024`, `RevitAPIPath2025`,
+  `RevitAPIPath`; override per-build dengan
+  `dotnet build -p:RevitAPIPath2024="D:\Path\Lain"` dst.).
+- **Tidak perlu SDK/tooling tambahan untuk net48** — build net48 lewat
+  package NuGet `Microsoft.NETFramework.ReferenceAssemblies`
+  (`PrivateAssets=all`), bukan targeting pack/Visual Studio. net48 juga
+  **wajib** referensi API Revit 2024 — API 2026 (net8) tidak akan termuat
+  di proses .NET Framework (§9). .NET 10 SDK juga belum diperlukan;
+  jalur Revit 2027 (= .NET 10) terdokumentasi di §9.1.
 - Tidak butuh Visual Studio. VS Code + .NET CLI cukup.
 
 ---
@@ -63,8 +74,8 @@ satu panel per tool:
 ```
 Apex/
 ├── Apex.sln
-├── Apex.csproj              # net8.0-windows, UseWPF, referensi RevitAPI(UI)
-├── Directory.Build.props    # RevitAPIPath (path instalasi Revit)
+├── Apex.csproj              # net48;net8.0-windows, UseWPF, referensi RevitAPI(UI) per-TFM
+├── Directory.Build.props    # RevitAPIPath2024/2025/2026 (path instalasi Revit)
 ├── Apex.addin               # <Assembly>Apex\Apex.dll</Assembly>, FullClassName Apex.App
 ├── App.cs                   # IExternalApplication: tab "Apex" + panel per tool
 ├── Icons/                   # PNG 16/32 px, embed sebagai <Resource>
@@ -110,15 +121,16 @@ Aturan:
 ## 3. Build & deploy
 
 ```powershell
-# Wajib: Revit 2026 tertutup
+# Wajib: semua Revit (2024/2025/2026) tertutup
 tasklist /FI "IMAGENAME eq Revit.exe" /NH
 
 dotnet build -c Release
 ```
 
 Target `DeployAddin` di `.csproj` (`AfterTargets="Build"`) otomatis:
-1. `MakeDir` folder `%AppData%\Autodesk\Revit\Addins\2026\`;
-2. `MakeDir` folder `%AppData%\Autodesk\Revit\Addins\2026\<NamaAddin>\`;
+1. `MakeDir` folder `%AppData%\Autodesk\Revit\Addins\<versi>\` — untuk
+   Apex, sekali jalan untuk semua versi di `DeployRevitVersions` (§9);
+2. `MakeDir` folder `%AppData%\Autodesk\Revit\Addins\<versi>\<NamaAddin>\`;
 3. copy `.addin` ke root Addins, copy DLL ke subfolder;
 4. hapus DLL lama di root (agar tidak ada dua salinan).
 
@@ -139,7 +151,9 @@ Contoh target (salin apa adanya):
 ```
 
 Untuk Apex: `Apex.addin` → root Addins, `Apex.dll` →
-`Addins\2026\Apex\` (aturan subfolder §4 tetap berlaku).
+`Addins\<versi>\Apex\` untuk tiap versi di `DeployRevitVersions`
+(`2025;2026` untuk TFM net8, `2024` untuk net48 — §9). Contoh target
+satu-versi di atas tetap berlaku untuk project legacy single-target.
 
 Target `AuthenticodeSign` (`BeforeTargets="DeployAddin"`, sudah terbukti
 jalan di `UltimateJoinElements.csproj` — bawa juga ke `Apex.csproj`)
@@ -350,21 +364,65 @@ private static void Log(string message)
 
 ---
 
-## 9. Multi-version (Revit 2024 / 2025 / 2026)
+## 9. Multi-version (Revit 2024 / 2025 / 2026 / 2026.5)
 
-- Revit **2024** = .NET Framework 4.8 (`net48`); **2025 & 2026** = .NET 8
-  (`net8.0-windows`).
-- Multi-target di `.csproj`:
+Satu codebase, `dotnet build -c Release` sekali → DLL ter-sign + manifest
+ter-deploy ke `Addins\2024`, `Addins\2025`, `Addins\2026` sekaligus.
+Matrix runtime (fakta Autodesk Support, artikel ".NET 10 transition",
+5 Sep 2026):
 
-  ```xml
-  <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
-  ```
-  dengan referensi RevitAPI kondisional per-TFM dan `RevitAPIPath` per-versi
-  (mis. `RevitAPIPath2024`, `RevitAPIPath2026`).
-- Manifest per versi: satu `.addin` per Revit version ke folder
-  `Addins\2024\`, `Addins\2025\`, `Addins\2026\`.
-- Jangan pakai API net8-only di jalur net48. Cek `#if NET8_0_OR_GREATER`.
-- Deploy target harus meng-copy ke folder Addins sesuai versi target.
+| Revit | Runtime | Build Apex yang dimuat |
+|---|---|---|
+| 2024 | .NET Framework 4.8 | `net48` (referensi API Revit **2024**) → `Addins\2024` |
+| 2025 | .NET 8 (naik ke .NET 10 ~minggu ke-2 Sep 2026, in-place) | `net8.0-windows` (API 2026) → `Addins\2025` — DLL net8 tetap termuat di host .NET 10 (forward-compatible) |
+| 2026 / 2026.5 | .NET 8 → **.NET 10** mulai 2026.5 | `net8.0-windows` → **satu folder `Addins\2026`** untuk dua minor (net8 = runtime terendah yang menang) |
+| 2027 | .NET 10 native | **Belum didukung** (defer) — jalurnya di §9.1 |
+
+Aturan keras (semua sudah diterapkan di `Apex.csproj`):
+
+- Multi-target: `<TargetFrameworks>net48;net8.0-windows</TargetFrameworks>`
+  + `<AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>`
+  (wajib — output `bin\Release\net48` vs `net8.0-windows` tidak saling timpa).
+- Referensi per-TFM: net48 → `$(RevitAPIPath2024)` (API 2024, era
+  `IntegerValue`); net8.0-windows → `$(RevitAPIPath)` (API 2026, era
+  `Id.Value`). net48 yang memakai API 2026 (net8) **tidak akan termuat**
+  di proses .NET Framework.
+- net48 buildable via dotnet CLI tanpa targeting pack:
+  `<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies"
+  Version="1.0.3" PrivateAssets="all" />` (kondisi net48 saja).
+- API net8-only di jalur net48 **haram dipakai langsung**. `ElementId`
+  wajib lewat helper `RevitCompat.GetElementIdValue(ElementId)`
+  (`Tools/UltimateJoin/Core/RevitCompat.cs`: `#if NETFRAMEWORK` →
+  `IntegerValue`, selain itu `Id.Value`).
+- `record`/`init` butuh shim `IsExternalInit` untuk net48 — sudah ada di
+  `IsExternalInit.cs` (guard `#if NETFRAMEWORK`; harus file sendiri,
+  tidak bisa digabung dengan file yang pakai file-scoped namespace).
+- Mapping deploy: property `DeployRevitVersions` per-TFM
+  (net48 → `2024`; net8.0-windows → `2025;2026`); target `DeployAddin`
+  mem-batch `%(DeployFolders.Identity)` atas versi-versi itu — copy
+  manifest ke root `Addins\<v>`, copy DLL ke `Addins\<v>\Apex\`, hapus
+  `Addins\<v>\Apex.dll` jelek lama.
+- `AuthenticodeSign` dan `DeployAddin` wajib diberi
+  `Condition="'$(TargetFramework)' != ''"` — tanpa itu keduanya ikut
+  jalan di build luar cross-targeting (tanpa TFM), di mana `$(TargetPath)`
+  kosong → sign gagal (`Set-AuthenticodeSignature -FilePath ''`).
+- **Jangan deploy binary net10 ke `Addins\2026`** — folder itu harus
+  berisi binary net8 (terendah) agar termuat di 2026.0 maupun 2026.5.
+- AddInId tetap **SATU** untuk semua versi → keputusan "Always Load"
+  per versi Revit (registry CodeSigning per versi), sekali per build hash.
+
+### 9.1 Jalur Revit 2027 (.NET 10) — saat dikehendaki
+
+1. Install .NET 10 SDK: `winget install Microsoft.DotNet.SDK.10`.
+2. Tambah TFM `net10.0-windows` di `Apex.csproj` + referensi API
+   `$(RevitAPIPath2027)` (path instalasi Revit 2027, tambahkan di
+   `Directory.Build.props`), dan property `DeployRevitVersions`
+   untuk net10 → `2027`.
+3. Audit pemakaian API yang berubah di API 2027; kalau ada, pakai
+   `#if NET10_0_OR_GREATER` / tambahkan cabang di `RevitCompat`.
+4. Build → `Addins\2027` mendapat binary net10; folder 2024/2025/2026
+   tidak berubah. Folder `Addins\2026` **tetap** harus menerima binary
+   net8 (jangan pernah net10) sampai 2026.0 tidak lagi dipakai.
 
 ---
 
@@ -391,7 +449,8 @@ Prinsip: pindahkan **logic** ke `Core/` dulu (tanpa UI/Revit UI), baru bikin
 ## 11. Checklist "add-in selesai"
 
 - [ ] `dotnet build -c Release` → `0 Error(s)`.
-- [ ] `.addin` + DLL ada di `%AppData%\Autodesk\Revit\Addins\2026\` (layout §4).
+- [ ] `.addin` + DLL ada di `%AppData%\Autodesk\Revit\Addins\2024\`,
+      `...\2025\`, dan `...\2026\` (layout §4; deploy multi-version §9).
 - [ ] Revit dibuka → tab/panel/tombol muncul.
 - [ ] Journal sesi baru punya `Starting External Application: <Nama>`.
 - [ ] `AddInsSettings.json` → entri add-in `LoadTime` > 0.
@@ -399,7 +458,8 @@ Prinsip: pindahkan **logic** ke `Core/` dulu (tanpa UI/Revit UI), baru bikin
 - [ ] Fungsi utama diuji di dokumen uji (transaction commit, tidak ada error).
 - [ ] `README.md` project diperbarui.
 - [ ] Khusus Apex: panel tool muncul di tab "Apex"; config JSON per tool
-      terbaca; registry CodeSigning hanya berisi SATU entri untuk Apex.
+      terbaca; registry CodeSigning hanya berisi SATU entri Apex per
+      versi Revit (AddInId sama di semua versi).
 
 ---
 

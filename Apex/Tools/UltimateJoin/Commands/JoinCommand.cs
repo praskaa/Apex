@@ -41,7 +41,7 @@ public class JoinCommand : IExternalCommand
         {
             try
             {
-                var filter = new CategorySelectionFilter(activePriority.Keys.ToHashSet());
+                var filter = new CategorySelectionFilter(new HashSet<BuiltInCategory>(activePriority.Keys));
                 var refs = uidoc.Selection.PickObjects(
                     ObjectType.Element, filter,
                     "Select elements to join (Esc to cancel), then click Finish");
@@ -128,8 +128,8 @@ public class JoinCommand : IExternalCommand
 
         foreach (var other in intersecting)
         {
-            var idA = element.Id.Value;
-            var idB = other.Id.Value;
+            var idA = RevitCompat.GetElementIdValue(element.Id);
+            var idB = RevitCompat.GetElementIdValue(other.Id);
             var pairKey = idA < idB ? (idA, idB) : (idB, idA);
             if (!processedPairs.Add(pairKey)) continue;
 
