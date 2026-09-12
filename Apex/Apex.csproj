@@ -1,0 +1,81 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Apex — hub add-in PrasKaa (satu DLL, satu manifest, tab "Apex",
+    satu panel per tool). Tool hidup di Tools/<NamaTool>/.
+
+    Revit 2026 runs on .NET 8. Revit 2024/2025 use .NET Framework 4.8 —
+    if you later multi-target, this TargetFramework line is the one to
+    change/duplicate (see AGENTS.md §9).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Apex</AssemblyName>
+    <RootNamespace>Apex</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Revit hosts the process; add-ins must not copy Revit's own DLLs -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <!--
+    RevitAPIPath is defined in Directory.Build.props. Override per-machine
+    with: dotnet build -p:RevitAPIPath="D:\Some\Other\Path"
+  -->
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitAPIPath)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitAPIPath)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Ribbon icons, embedded into the assembly (pack URI: component/Icons/...) -->
+    <Resource Include="Icons\join.small.png" />
+    <Resource Include="Icons\join.large.png" />
+    <Resource Include="Icons\configure.small.png" />
+    <Resource Include="Icons\configure.large.png" />
+  </ItemGroup>
+
+  <!--
+    Signs the DLL with a local code-signing certificate (subject
+    "CN=PrasKaa", auto-created on first Release build) so Revit's
+    security dialog shows Publisher/Issuer: PrasKaa instead of
+    "Unknown Publisher"/"None". The cert is self-signed, so Revit still
+    asks once per new build hash — click "Always Load"; trusting the
+    cert in Cert:\CurrentUser\Root removes the prompt entirely.
+    Runs after Build and before DeployAddin so the deployed DLL is the
+    signed one.
+  -->
+  <Target Name="AuthenticodeSign" BeforeTargets="DeployAddin">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$c = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -eq 'CN=PrasKaa' -and $_.HasPrivateKey } | Select-Object -First 1; if (-not $c) { $c = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=PrasKaa' -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(20) }; Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate $c | Out-Null&quot;" />
+  </Target>
+
+  <!--
+    After every build, drop the .addin manifest + dll into Revit's
+    per-user Addins folder so "build → open Revit → test" works without
+    a manual copy step. Revit 2026 does not resolve a bare-filename
+    <Assembly>, hence the dedicated subfolder (see AGENTS.md §4).
+  -->
+  <Target Name="DeployAddin" AfterTargets="Build">
+    <ItemGroup>
+      <AddinFiles Include="$(ProjectDir)Apex.addin" />
+      <BuiltDlls Include="$(TargetDir)Apex.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(AppData)\Autodesk\Revit\Addins\2026" />
+    <MakeDir Directories="$(AppData)\Autodesk\Revit\Addins\2026\Apex" />
+    <Copy SourceFiles="@(AddinFiles)" DestinationFolder="$(AppData)\Autodesk\Revit\Addins\2026" />
+    <Copy SourceFiles="@(BuiltDlls)" DestinationFolder="$(AppData)\Autodesk\Revit\Addins\2026\Apex" />
+    <Delete Files="$(AppData)\Autodesk\Revit\Addins\2026\Apex.dll" ContinueOnError="true" />
+  </Target>
+
+</Project>

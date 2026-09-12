@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "RevitAddin",
+			"path": "."
+		},
+		{
+			"name": "Journals",
+			"path": "../../AppData/Local/Autodesk/Revit/Autodesk Revit 2026/Journals"
+		},
+		{
+			"name": "PyPrasKaa.extension",
+			"path": "../pyRevit/PyPrasKaa.extension"
+		}
+	],
+	"settings": {}
+}

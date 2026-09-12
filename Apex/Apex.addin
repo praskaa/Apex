@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Apex</Name>
+    <Assembly>Apex\Apex.dll</Assembly>
+    <!-- One AddInId for the whole Apex hub — never change it -->
+    <AddInId>653D20BC-E04F-4455-9EF3-6928EB8320B8</AddInId>
+    <FullClassName>Apex.App</FullClassName>
+    <VendorId>PRSK</VendorId>
+    <VendorDescription>PrasKaa</VendorDescription>
+  </AddIn>
+</RevitAddIns>
